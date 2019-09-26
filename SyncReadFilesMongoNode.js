@@ -51,7 +51,7 @@ const test = class {
       let user;
       let pass;
       //each file
-      for (let i = 1; i < walkSync.length; i++) {
+      for (let i = 0; i < walkSync.length; i++) {
         status = true;
         console.log(walkSync[i]);
         lineasVSMongo = 0;
