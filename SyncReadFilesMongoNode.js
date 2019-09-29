@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const es = require('event-stream');
-const PATHPADRE = 'E:/XXX';
+const PATHPADRE = 'D:/XXX';
 //emails
 const re = new RegExp(/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i);
 
@@ -47,17 +47,17 @@ const test = class {
     try {
       let status; //flag to make it sync
       let lr; //data stream
-      let lineasVSMongo = 0; //know the lines that mongo has introduce
-      let user;
-      let pass;
+      let user;//substring
+      let pass;//substring
+      let bulk;//bulk mongo
+
       //each file
       for (let i = 0; i < walkSync.length; i++) {
+        bulk = Accounts.collection.initializeUnorderedBulkOp();//initialize bulk
         status = true;
-        console.log(walkSync[i]);
-        lineasVSMongo = 0;
+        console.log(i + ' - ' + walkSync[i]);
         //each line
-        lr = fs.createReadStream(walkSync[i]).pipe(es.split()).pipe(es.mapSync(async function(line){
-            lineasVSMongo++;
+        lr = fs.createReadStream(walkSync[i]).pipe(es.split()).pipe(es.mapSync(function(line){
             user = '';
             pass = '';
             if (line.includes("@")) {
@@ -74,14 +74,12 @@ const test = class {
                 user = line.substring(line.indexOf("||") , line.indexOf(''));
                 pass = line.substring(line.indexOf("||") + 1);
               }
-              if (pass != '' & re.test(String(user).toLowerCase())) {//if mail is valid, introduce to the DB
-                await Accounts.create({
+              if (pass != '' & re.test(String(user).toLowerCase())) {//if mail is valid, introduce to the bulk
+              bulk.insert({
                   file:walkSync[i],
                   user: user,
                   pass: pass
                 },function (err, small) {
-                    lineasVSMongo--;
-                    console.log(lineasVSMongo);
                     if (err) return err;
                   }
                 );
@@ -89,12 +87,13 @@ const test = class {
             }
           }))
           .on('end', function () {//when finish the file
-            status = false;
-            console.log(walkSync[i]+' CERRADO');
+            console.log(walkSync[i]+' CLOSED');
+            bulk.execute(function(err,result) {//execute the bulk
+              status = false;// close the loop "while" and pass to the next file
+            });
           });
-
         while(status) {
-          await sleep(1000);//this make the loop of files sync
+          await sleep(5000);//this make the loop of files sync
         };
       }
       resolve();
@@ -107,7 +106,9 @@ const test = class {
 
 (async() => {
   try {
+    await sleep(2000);//make sure the connection with mongo
     let comienza = await new test(); //start
+    await sleep(15000);//await to make sure that the pool of mongoose insert all the lines
   }
   catch(e) {
     console.log(e);
