@@ -46,20 +46,22 @@ const test = class {
   async then(resolve, reject) {
     try {
       let status; //flag to make it sync
-      let status2;
-      let a;
+      let status2; //flag to pause or resume the stream
+      let a;//interval
+      let count = 0 ;//count how many seconds waits when inserts on mongoDB
       let lr; //data stream
       let user;//substring
       let pass;//substring
       let arrray = [];
       //each file
-      for (let i = 1872; i < walkSync.length; i++) {
+      for (let i = 0; i < walkSync.length; i++) {
         lr = new LineByLineReader(walkSync[i]);
         status = true;
         arrray = [];
         console.log(i + ' - ' + walkSync[i]);
         //each line
         lr.on('line', function (line) {
+          count = 0;
           status2 = true;
           user = '';
           pass = '';
@@ -76,32 +78,42 @@ const test = class {
             } else if (line.includes("||")) {
               user = line.substring(line.indexOf("||") , line.indexOf(''));
               pass = line.substring(line.indexOf("||") + 1);
+            } else if (line.includes("\t")) {
+              user = line.substring(line.indexOf("\t") , line.indexOf(''));
+              pass = line.substring(line.indexOf("\t") + 1);
+            } else if (line.includes(" ")) {
+              user = line.substring(line.indexOf(" ") , line.indexOf(''));
+              pass = line.substring(line.indexOf(" ") + 1);
+            } else if (line.includes("  ")) {
+              user = line.substring(line.indexOf("  ") , line.indexOf(''));
+              pass = line.substring(line.indexOf("  ") + 1);
             }
             if (pass != '' & re.test(String(user).toLowerCase())) {
-              arrray.push({file:walkSync[i],user: user,pass: pass});
-              if (arrray.length == 100000) {
-                lr.pause();
-                Accounts.bulkWrite(arrray, {ordered:false, w:0}, function (err, docs) {
+              arrray.push({file:walkSync[i],user: user,pass: pass});//insert on array
+              if (arrray.length == 100000) {//every 100.000 lines, insert
+                lr.pause();//pause streaming
+                Accounts.insertMany(arrray, {ordered:false, w:0}, function (err, docs) {//insert on mongoDB
                   status2 = false;
                 });
-                a = setInterval(function(){
-                  console.log('pausa');
+                a = setInterval(function(){//every second verify if has inserted all on mongoDB
+                  count++;
+                  console.log('pause'+count);
                   if (!status2) {
                     lr.resume();
                     clearInterval(a);
                     arrray = [];
-                    console.log('-Fin pausa-');
+                    console.log('-End pause-');
                   }
-                }, 500);
+                }, 1000);
               }
             }
           }
         })
         lr.on('end', function () {
-          console.log(walkSync[i]+' CLOSED');
-          Accounts.bulkWrite(arrray, {ordered:false}, function (err, docs) {
+          Accounts.insertMany(arrray, {ordered:false, w:0}, function (err, docs) {//insert on mongoDB
             status = false;
           });
+          console.log(walkSync[i]+' CLOSED');
         });
 
         while(status) {
@@ -118,9 +130,7 @@ const test = class {
 
 (async() => {
   try {
-    await sleep(2000);//make sure the connection with mongo
     let comienza = await new test(); //start
-    await sleep(15000);//await to make sure that the pool of mongoose insert all the lines
   }
   catch(e) {
     console.log(e);
