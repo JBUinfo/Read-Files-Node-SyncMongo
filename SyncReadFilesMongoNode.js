@@ -49,18 +49,22 @@ const test = class {
       let lr; //data stream
       let user;//substring
       let pass;//substring
-      let bulk;//bulk mongo
-
+      let countMongo;
+      let countValid;
+      let countInvalid;
       //each file
       for (let i = 0; i < walkSync.length; i++) {
-        bulk = Accounts.collection.initializeUnorderedBulkOp();//initialize bulk
         status = true;
+        countMongo = 0;
+        countValid = 0;
+        countInvalid = 0;
         console.log(i + ' - ' + walkSync[i]);
         //each line
         lr = fs.createReadStream(walkSync[i]).pipe(es.split()).pipe(es.mapSync(function(line){
             user = '';
             pass = '';
             if (line.includes("@")) {
+              countValid++;
               if (line.includes(":")) {
                 user = line.substring(line.indexOf(":") , line.indexOf(''));
                 pass = line.substring(line.indexOf(":") + 1);
@@ -74,23 +78,30 @@ const test = class {
                 user = line.substring(line.indexOf("||") , line.indexOf(''));
                 pass = line.substring(line.indexOf("||") + 1);
               }
-              if (pass != '' & re.test(String(user).toLowerCase())) {//if mail is valid, introduce to the bulk
-              bulk.insert({
-                  file:walkSync[i],
-                  user: user,
-                  pass: pass
+              if (pass != '' & re.test(String(user).toLowerCase())) {
+                Accounts.create({
+                    file:walkSync[i],
+                    user: user,
+                    pass: pass
                 },function (err, small) {
+                    countMongo++;
                     if (err) return err;
                   }
                 );
+              } else {
+                countValid--;
+                countInvalid++;
               }
             }
           }))
-          .on('end', function () {//when finish the file
+          .on('end', async function () {//when finish the file
+            while (countValid>countMongo) {
+              console.log('LOOOOOOP');
+              await sleep(3000);
+            }
+            status = false;// close the loop "while" and pass to the next file
+            console.log('Valid: '+countValid+' --- Mongo: '+countMongo+' --- Invalid: '+countInvalid);
             console.log(walkSync[i]+' CLOSED');
-            bulk.execute(function(err,result) {//execute the bulk
-              status = false;// close the loop "while" and pass to the next file
-            });
           });
         while(status) {
           await sleep(5000);//this make the loop of files sync
