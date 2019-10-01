@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const es = require('event-stream');
+const LineByLineReader = require('line-by-line');
 const PATHPADRE = 'D:/XXX';
 //emails
 const re = new RegExp(/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i);
@@ -9,7 +9,7 @@ const re = new RegExp(/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}$
 const mongoose = require('mongoose');
 mongoose.set('useCreateIndex', true);
 mongoose.set('debug', false);
-mongoose.connect('mongodb://localhost/XXX', {useNewUrlParser: true});
+mongoose.connect('mongodb://localhost/XXX', {useNewUrlParser: true,   useUnifiedTopology: true});
 const Schema = mongoose.Schema;
 const ObjectId = Schema.ObjectId;
 const Accounts = mongoose.model('accounts',new Schema ({
@@ -46,65 +46,66 @@ const test = class {
   async then(resolve, reject) {
     try {
       let status; //flag to make it sync
+      let status2;
+      let a;
       let lr; //data stream
       let user;//substring
       let pass;//substring
-      let countMongo;
-      let countValid;
-      let countInvalid;
+      let arrray = [];
       //each file
-      for (let i = 0; i < walkSync.length; i++) {
+      for (let i = 1872; i < walkSync.length; i++) {
+        lr = new LineByLineReader(walkSync[i]);
         status = true;
-        countMongo = 0;
-        countValid = 0;
-        countInvalid = 0;
+        arrray = [];
         console.log(i + ' - ' + walkSync[i]);
         //each line
-        lr = fs.createReadStream(walkSync[i]).pipe(es.split()).pipe(es.mapSync(function(line){
-            user = '';
-            pass = '';
-            if (line.includes("@")) {
-              countValid++;
-              if (line.includes(":")) {
-                user = line.substring(line.indexOf(":") , line.indexOf(''));
-                pass = line.substring(line.indexOf(":") + 1);
-              } else if (line.includes(";")) {
-                user = line.substring(line.indexOf(";") , line.indexOf(''));
-                pass = line.substring(line.indexOf(";") + 1);
-              } else if (line.includes("|")) {
-                user = line.substring(line.indexOf("|") , line.indexOf(''));
-                pass = line.substring(line.indexOf("|") + 1);
-              } else if (line.includes("||")) {
-                user = line.substring(line.indexOf("||") , line.indexOf(''));
-                pass = line.substring(line.indexOf("||") + 1);
-              }
-              if (pass != '' & re.test(String(user).toLowerCase())) {
-                Accounts.create({
-                    file:walkSync[i],
-                    user: user,
-                    pass: pass
-                },function (err, small) {
-                    countMongo++;
-                    if (err) return err;
+        lr.on('line', function (line) {
+          status2 = true;
+          user = '';
+          pass = '';
+          if (line.includes("@")) {
+            if (line.includes(":")) {
+              user = line.substring(line.indexOf(":") , line.indexOf(''));
+              pass = line.substring(line.indexOf(":") + 1);
+            } else if (line.includes(";")) {
+              user = line.substring(line.indexOf(";") , line.indexOf(''));
+              pass = line.substring(line.indexOf(";") + 1);
+            } else if (line.includes("|")) {
+              user = line.substring(line.indexOf("|") , line.indexOf(''));
+              pass = line.substring(line.indexOf("|") + 1);
+            } else if (line.includes("||")) {
+              user = line.substring(line.indexOf("||") , line.indexOf(''));
+              pass = line.substring(line.indexOf("||") + 1);
+            }
+            if (pass != '' & re.test(String(user).toLowerCase())) {
+              arrray.push({file:walkSync[i],user: user,pass: pass});
+              if (arrray.length == 100000) {
+                lr.pause();
+                Accounts.bulkWrite(arrray, {ordered:false, w:0}, function (err, docs) {
+                  status2 = false;
+                });
+                a = setInterval(function(){
+                  console.log('pausa');
+                  if (!status2) {
+                    lr.resume();
+                    clearInterval(a);
+                    arrray = [];
+                    console.log('-Fin pausa-');
                   }
-                );
-              } else {
-                countValid--;
-                countInvalid++;
+                }, 500);
               }
             }
-          }))
-          .on('end', async function () {//when finish the file
-            while (countValid>countMongo) {
-              console.log('LOOOOOOP');
-              await sleep(3000);
-            }
-            status = false;// close the loop "while" and pass to the next file
-            console.log('Valid: '+countValid+' --- Mongo: '+countMongo+' --- Invalid: '+countInvalid);
-            console.log(walkSync[i]+' CLOSED');
+          }
+        })
+        lr.on('end', function () {
+          console.log(walkSync[i]+' CLOSED');
+          Accounts.bulkWrite(arrray, {ordered:false}, function (err, docs) {
+            status = false;
           });
+        });
+
         while(status) {
-          await sleep(5000);//this make the loop of files sync
+          await sleep(2000);//this make the loop of files sync
         };
       }
       resolve();
