@@ -1,4 +1,4 @@
-# ReadFilesNodeSyncMongo
+# Read-Files-Node-SyncMongo
 NodeJS
 
 Here you can read every line of every file on a folder (recursively) and introduce data in Mongo.
